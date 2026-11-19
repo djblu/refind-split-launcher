@@ -1,0 +1,26 @@
+name: Build and test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  x86-64:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential binutils gnu-efi python3-pil
+      - name: Build x86-64 GNU-EFI executable
+        run: make gnuefi
+      - name: Test split renderer helpers
+        run: python3 split-tools/test_menu.py
+      - name: Package release candidate
+        run: python3 split-tools/package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: refind-split-launcher-x86_64
+          path: dist/refind-split-launcher.zip

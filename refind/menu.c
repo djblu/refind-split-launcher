@@ -1214,6 +1214,50 @@ static VOID PaintArrows(SCROLL_STATE *State, UINTN PosX, UINTN PosY, UINTN row0L
     }
 } // VOID PaintArrows()
 
+// Optional two-entry split artwork. Fail back to the stock UI if either
+// image is unavailable, allocation fails, or the menu is not the expected pair.
+static EG_IMAGE *SplitImages[2] = { NULL, NULL };
+static BOOLEAN SplitActive = FALSE;
+
+static VOID FreeSplitImages(VOID) {
+    UINTN i;
+    SplitActive = FALSE;
+    for (i = 0; i < 2; i++) {
+        if (SplitImages[i] != NULL)
+            egFreeImage(SplitImages[i]);
+        SplitImages[i] = NULL;
+    }
+}
+
+static VOID LoadSplitImages(REFIT_MENU_SCREEN *Screen) {
+    UINTN i;
+    CHAR16 *Names[2] = { L"split-windows.png", L"split-batocera.png" };
+    FreeSplitImages();
+    if (Screen->EntryCount != 2 ||
+        Screen->Entries[0]->Row != 0 || Screen->Entries[1]->Row != 0 ||
+        MyStrStr(Screen->Entries[0]->Title, L"Windows") == NULL ||
+        MyStrStr(Screen->Entries[1]->Title, L"Batocera") == NULL)
+        return;
+    for (i = 0; i < 2; i++) {
+        EG_IMAGE *Original = egLoadImage(SelfDir, Names[i], FALSE);
+        if (Original == NULL) {
+            FreeSplitImages();
+            return;
+        }
+        if (Original->Width == UGAWidth && Original->Height == UGAHeight) {
+            SplitImages[i] = Original;
+        } else {
+            SplitImages[i] = egScaleImage(Original, UGAWidth, UGAHeight);
+            egFreeImage(Original);
+        }
+        if (SplitImages[i] == NULL) {
+            FreeSplitImages();
+            return;
+        }
+    }
+    SplitActive = TRUE;
+}
+
 // Display main menu in graphics mode
 VOID MainMenuStyle(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State,
                    IN UINTN Function, IN CHAR16 *ParamText)
@@ -1223,6 +1267,20 @@ VOID MainMenuStyle(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State,
     UINTN row0Count, row1Count, row1PosX, row1PosXRunning;
     static UINTN *itemPosX;
     static UINTN row0PosY, textPosY;
+
+    if (Function == MENU_FUNCTION_INIT)
+        LoadSplitImages(Screen);
+    if (SplitActive &&
+        (Function == MENU_FUNCTION_PAINT_ALL ||
+         Function == MENU_FUNCTION_PAINT_SELECTION)) {
+        if (State->CurrentSelection >= 0 && State->CurrentSelection < 2)
+            egDrawImage(SplitImages[State->CurrentSelection], 0, 0);
+        return;
+    }
+    if (SplitActive && Function == MENU_FUNCTION_PAINT_TIMEOUT)
+        return;
+    if (Function == MENU_FUNCTION_CLEANUP)
+        FreeSplitImages();
 
     State->ScrollMode = SCROLL_MODE_ICONS;
     switch (Function) {
@@ -1295,6 +1353,15 @@ VOID MainMenuStyle(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State,
 // Determines the index of the main menu item at the given coordinates.
 UINTN FindMainMenuItem(IN REFIT_MENU_SCREEN *Screen, IN SCROLL_STATE *State, IN UINTN PosX, IN UINTN PosY)
 {
+    // Diagonal follows the supplied artwork: x=1108 at the top and x=482
+    // at the bottom of a 1672x941 canvas. Works at fallback GOP modes too.
+    if (SplitActive && Screen->EntryCount == 2) {
+        UINTN Boundary;
+        if (PosX >= UGAWidth || PosY >= UGAHeight)
+            return POINTER_NO_ITEM;
+        Boundary = (UGAWidth * 1108 - (UGAWidth * 626 * PosY) / UGAHeight) / 1672;
+        return PosX < Boundary ? 0 : 1;
+    }
     UINTN i;
     static UINTN row0PosX, row0PosXRunning, row1PosY, row0Loaders;
     UINTN row0Count, row1Count, row1PosX, row1PosXRunning;

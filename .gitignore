@@ -1,0 +1,10 @@
+*.o
+*.a
+*.so
+*.efi
+*.obj
+*.dll
+*.lib
+__pycache__/
+dist/
+.venv/
